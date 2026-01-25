@@ -640,17 +640,17 @@ for i in range(0, len(filtered_movies), cols_per_row):
                     st.markdown(quality_badges, unsafe_allow_html=True)
                 
                 # Links
-                col1, col2, col3 = st.columns(3)
+                col1, col3 = st.columns(2)
                 with col1:
                     if movie.get('imdb_link'):
                         st.link_button("↗️ IMDB", movie['imdb_link'], width='stretch')
                 
-                with col2:
-                    if movie.get('magnet_links'):
-                        with st.popover("🧲 Magnets"):
-                            for link in movie['magnet_links']:
-                                st.markdown(f"**{link['quality']} {link['type']}**")
-                                st.code(link['url'], language=None)
+                # with col2:
+                #     if movie.get('magnet_links'):
+                #         with st.popover("🧲 Magnets"):
+                #             for link in movie['magnet_links']:
+                #                 st.markdown(f"**{link['quality']} {link['type']}**")
+                #                 st.code(link['url'], language=None)
                 
                 with col3:
                     if movie.get('magnet_links'):

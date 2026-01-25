@@ -3,7 +3,7 @@
 SESSION_NAME=$1
 WORK_DIR=$2
 ACTION=$3  # start or stop
-CMD="source .env.export && .venv/bin/python -m streamlit run --server.port 4229 src/al_gud/app.py"
+CMD="source .env.export && .venv/bin/python -m streamlit run --server.port 4229 app.py"
 
 cd "$WORK_DIR" || exit 1
 
