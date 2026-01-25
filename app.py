@@ -216,7 +216,7 @@ def request_movie(magnet_url, movie_title, movie_year):
             add_cmd,
             capture_output=True,
             text=True,
-            timeout=30,
+            timeout=60,
             cwd=deluge_working_dir
         )
         
@@ -227,7 +227,7 @@ def request_movie(magnet_url, movie_title, movie_year):
         # Step 2: Get torrent status
         import re
         import time
-        time.sleep(1)  # Give deluge a moment to register the torrent
+        time.sleep(3)  # Give deluge a moment to register the torrent
         
         info_cmd = [
             "docker", "compose", "exec", "deluge", "deluge-console",
@@ -240,7 +240,7 @@ def request_movie(magnet_url, movie_title, movie_year):
             info_cmd,
             capture_output=True,
             text=True,
-            timeout=30,
+            timeout=60,
             cwd=deluge_working_dir
         )
         
@@ -255,7 +255,7 @@ def request_movie(magnet_url, movie_title, movie_year):
         
         if not torrent_info:
             st.warning(f"⚠️ Torrent added but status not found yet. It may take a moment to appear.")
-            st.code(output, language=None)
+            # st.code(output, language=None)
             return
         
         # Extract completion percentage and torrent ID from line like:
@@ -688,12 +688,16 @@ for i in range(0, len(filtered_movies), cols_per_row):
                                         except Exception:
                                             pass
                                 
-                                if downloading_status and downloading_status.get('completion_percent') != '100':
-                                    # Show completion percentage as a button to refresh status
-                                    completion = downloading_status.get('completion_percent', '0')
-                                    if st.button(f"🔄 {completion}%", width='stretch', key=f"update_status_{movie['slug']}"):
-                                        update_torrent_statuses_from_deluge()
-                                        st.rerun()
+                                if downloading_status:
+                                    if float(downloading_status.get('completion_percent', '0')) < 100:
+                                        # Show completion percentage as a button to refresh status
+                                        completion = downloading_status.get('completion_percent', '0')
+                                        if st.button(f"🔄 {completion}%", width='stretch', key=f"update_status_{movie['slug']}"):
+                                            update_torrent_statuses_from_deluge()
+                                            st.rerun()
+                                    else:
+                                        completion = downloading_status.get('completion_percent', '0')
+                                        st.markdown("<div style='text-align: center; padding: 8px; background-color: #2d7f2d; border-radius: 5px;'>💯 Completed</div>", unsafe_allow_html=True) 
                                 else:
                                     # Show request button
                                     if st.button("📥 Request", width='stretch', key=f"request_{movie['slug']}"):
