@@ -430,7 +430,7 @@ def update_torrent_statuses_from_deluge():
                 # Find the matching line in deluge output
                 found = False
                 for line in output.split('\n'):
-                    if str(year) in line and title.lower() in line.lower() and torrent_id[:16] in line:
+                    if torrent_id in line:
                         found = True
                         # Extract completion percentage
                         match = re.search(r'\[\S+\]\s+([\d.]+)%', line)
