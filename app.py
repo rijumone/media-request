@@ -2,6 +2,15 @@ import streamlit as st
 import json
 from pathlib import Path
 import subprocess
+import os
+import csv
+from datetime import datetime
+try:
+    import jellyfin
+    from jellyfin.generated.api_10_10.models.media_type import MediaType
+    JELLYFIN_AVAILABLE = True
+except ImportError:
+    JELLYFIN_AVAILABLE = False
 
 # Page configuration
 st.set_page_config(
@@ -108,28 +117,175 @@ def select_best_magnet(magnet_links):
     best_link = min(magnet_links, key=score_link)
     return best_link
 
-def request_movie(magnet_url, movie_title):
-    """Run subprocess command to request a movie."""
+def request_movie(magnet_url, movie_title, movie_year):
+    """Run docker compose command to add torrent to deluge and track its status."""
     try:
-        # Using echo as placeholder - replace with actual command later
-        result = subprocess.run(
-            ['echo', magnet_url],
+        deluge_user = os.getenv("DELUGE_USERNAME")
+        deluge_pass = os.getenv("DELUGE_PASSWORD")
+        deluge_working_dir = os.getenv("DELUGE_WORKING_DIRECTORY")
+        
+        if not deluge_user or not deluge_pass:
+            st.error("❌ Deluge credentials not configured")
+            return
+        
+        if not deluge_working_dir:
+            st.error("❌ Deluge working directory not configured")
+            return
+        
+        # Step 1: Add torrent to deluge
+        add_cmd = [
+            "docker", "compose", "exec", "deluge", "deluge-console",
+            "-U", deluge_user,
+            "-P", deluge_pass,
+            "add",
+            magnet_url,
+            "--path", "/8tb_hdd",
+            "-m", "/8tb_hdd/Movies"
+        ]
+        
+        add_result = subprocess.run(
+            add_cmd,
             capture_output=True,
             text=True,
-            timeout=10
+            timeout=30,
+            cwd=deluge_working_dir
         )
-        print(result.stdout)
-        if result.returncode == 0:
-            st.success(f"✅ Request submitted for: {movie_title}")
-            st.code(result.stdout, language=None)
+        
+        if "Torrent added!" not in add_result.stderr and "Torrent added!" not in add_result.stdout:
+            st.error(f"❌ Failed to add torrent: {add_result.stderr}")
+            return
+        
+        # Step 2: Get torrent status
+        import re
+        import time
+        time.sleep(1)  # Give deluge a moment to register the torrent
+        
+        info_cmd = [
+            "docker", "compose", "exec", "deluge", "deluge-console",
+            "-U", deluge_user,
+            "-P", deluge_pass,
+            "info"
+        ]
+        
+        info_result = subprocess.run(
+            info_cmd,
+            capture_output=True,
+            text=True,
+            timeout=30,
+            cwd=deluge_working_dir
+        )
+        
+        output = info_result.stdout + info_result.stderr
+        
+        # Parse the output to find the torrent with matching year and title
+        torrent_info = None
+        for line in output.split('\n'):
+            if str(movie_year) in line and movie_title.lower() in line.lower():
+                torrent_info = line.strip()
+                break
+        
+        if not torrent_info:
+            st.warning(f"⚠️ Torrent added but status not found yet. It may take a moment to appear.")
+            st.code(output, language=None)
+            return
+        
+        # Extract completion percentage and torrent ID from line like:
+        # [D]  7.22% Back to the Future (1985) [1080p] fb94d1f636cf921a7cd37ba2ffbb3c7ffd680113
+        match = re.search(r'\[\S+\]\s+([\d.]+)%\s+.*?([a-f0-9]{40})$', torrent_info)
+        
+        if match:
+            completion = match.group(1)
+            torrent_id = match.group(2)
         else:
-            st.error(f"❌ Request failed: {result.stderr}")
+            completion = "0"
+            torrent_id = "unknown"
+        
+        # Step 3: Save to CSV
+        csv_file = "torrent_tracking.csv"
+        file_exists = Path(csv_file).exists()
+        
+        with open(csv_file, 'a', newline='') as f:
+            writer = csv.writer(f)
+            if not file_exists:
+                writer.writerow(['timestamp', 'movie_title', 'year', 'torrent_id', 'completion_percent', 'status'])
+            
+            writer.writerow([
+                datetime.now().isoformat(),
+                movie_title,
+                movie_year,
+                torrent_id,
+                completion,
+                'added'
+            ])
+        
+        st.success(f"✅ Torrent added for: {movie_title} ({movie_year})")
+        st.info(f"📊 Completion: {completion}% | ID: {torrent_id[:16]}...")
+        
     except subprocess.TimeoutExpired:
         st.error("⏱️ Request timed out")
     except Exception as e:
         st.error(f"❌ Error: {str(e)}")
 
+@st.cache_resource
+def get_jellyfin_api():
+    """Initialize and return Jellyfin API connection."""
+    if not JELLYFIN_AVAILABLE:
+        return None
+    try:
+        api = jellyfin.api(
+            os.getenv("JELLYFIN_URL"),
+            os.getenv("JELLYFIN_API_KEY")
+        )
+        return api
+    except Exception:
+        return None
+
+@st.cache_data(ttl=3600)
+def get_jellyfin_items():
+    """Fetch and cache all movie items from Jellyfin library as dictionaries."""
+    if not JELLYFIN_AVAILABLE:
+        return []
+    
+    api = get_jellyfin_api()
+    if not api:
+        return []
+    
+    try:
+        cached_items = []
+        for item in api.items.search.recursive().all:
+            if item.media_type == MediaType.VIDEO and item.type.value == 'Movie':
+                # Extract only the necessary data to avoid pickling issues with Jellyfin objects
+                cached_items.append({
+                    'name': item.name,
+                    'year': item.production_year
+                })
+        # st.write(f"Fetched {len(cached_items)} movies from Jellyfin")
+        return cached_items
+    except Exception:
+        return []
+
+def check_movie_in_jellyfin(title, year):
+    """Check if a movie exists in Jellyfin library using cached items."""
+    if not JELLYFIN_AVAILABLE:
+        return False
+    
+    items = get_jellyfin_items()
+    if not items:
+        return False
+    
+    try:
+        for item in items:
+            if title.lower() in item['name'].lower() and item['year'] == year:
+                return True
+    except Exception:
+        pass
+    
+    return False
+
 data = load_data()
+
+# Pre-load Jellyfin cache on initial page load
+_ = get_jellyfin_items()
 
 # Header
 st.title("🎬 Riju's Movie Request Platform")
@@ -306,7 +462,7 @@ for i in range(0, len(filtered_movies), cols_per_row):
                 col1, col2, col3 = st.columns(3)
                 with col1:
                     if movie.get('imdb_link'):
-                        st.link_button("IMDB", movie['imdb_link'], width='stretch')
+                        st.link_button("↗️ IMDB", movie['imdb_link'], width='stretch')
                 
                 with col2:
                     if movie.get('magnet_links'):
@@ -317,9 +473,15 @@ for i in range(0, len(filtered_movies), cols_per_row):
                 
                 with col3:
                     if movie.get('magnet_links'):
-                        best_magnet = select_best_magnet(movie['magnet_links'])
-                        if best_magnet and st.button("📥 Request", width='stretch', key=f"request_{movie['slug']}"):
-                            request_movie(best_magnet['url'], movie['title'])
+                        # Check if movie exists in Jellyfin
+                        exists_in_jellyfin = check_movie_in_jellyfin(movie['title'], movie['year'])
+                        
+                        if exists_in_jellyfin:
+                            st.markdown("<div style='text-align: center; padding: 8px; background-color: #2d7f2d; border-radius: 5px;'>✅ In Library</div>", unsafe_allow_html=True)
+                        else:
+                            best_magnet = select_best_magnet(movie['magnet_links'])
+                            if best_magnet and st.button("📥 Request", width='stretch', key=f"request_{movie['slug']}"):
+                                request_movie(best_magnet['url'], movie['title'], movie['year'])
                 
                 st.divider()
 
