@@ -5,6 +5,7 @@ import subprocess
 import os
 import csv
 from datetime import datetime
+import re
 try:
     import jellyfin
     from jellyfin.generated.api_10_10.models.media_type import MediaType
@@ -282,10 +283,122 @@ def check_movie_in_jellyfin(title, year):
     
     return False
 
+def get_latest_torrent_status(torrent_id):
+    """Get the latest status for a torrent from the CSV file."""
+    csv_file = "torrent_tracking.csv"
+    if not Path(csv_file).exists():
+        return None
+    
+    latest_status = None
+    try:
+        with open(csv_file, 'r') as f:
+            reader = csv.DictReader(f)
+            for row in reader:
+                if row.get('torrent_id') == torrent_id:
+                    latest_status = row
+    except Exception:
+        pass
+    
+    return latest_status
+
+def update_torrent_statuses_from_deluge():
+    """Update statuses for all torrents in the CSV by querying deluge."""
+    csv_file = "torrent_tracking.csv"
+    if not Path(csv_file).exists():
+        return
+    
+    deluge_user = os.getenv("DELUGE_USERNAME")
+    deluge_pass = os.getenv("DELUGE_PASSWORD")
+    deluge_working_dir = os.getenv("DELUGE_WORKING_DIRECTORY")
+    
+    if not deluge_user or not deluge_pass or not deluge_working_dir:
+        return
+    
+    # Read existing torrents from CSV
+    torrents_to_check = {}
+    try:
+        with open(csv_file, 'r') as f:
+            reader = csv.DictReader(f)
+            for row in reader:
+                torrent_id = row.get('torrent_id')
+                if torrent_id and torrent_id != 'unknown':
+                    torrents_to_check[torrent_id] = {
+                        'title': row.get('movie_title'),
+                        'year': row.get('year')
+                    }
+    except Exception:
+        return
+    
+    if not torrents_to_check:
+        return
+    
+    # Query deluge for current info
+    try:
+        info_cmd = [
+            "docker", "compose", "exec", "deluge", "deluge-console",
+            "-U", deluge_user,
+            "-P", deluge_pass,
+            "info"
+        ]
+        
+        info_result = subprocess.run(
+            info_cmd,
+            capture_output=True,
+            text=True,
+            timeout=30,
+            cwd=deluge_working_dir
+        )
+        
+        output = info_result.stdout + info_result.stderr
+        
+        # Parse output and update CSV
+        with open(csv_file, 'a', newline='') as f:
+            writer = csv.writer(f)
+            
+            for torrent_id, torrent_info in torrents_to_check.items():
+                title = torrent_info['title']
+                year = torrent_info['year']
+                
+                # Find the matching line in deluge output
+                found = False
+                for line in output.split('\n'):
+                    if str(year) in line and title.lower() in line.lower() and torrent_id[:16] in line:
+                        found = True
+                        # Extract completion percentage
+                        match = re.search(r'\[\S+\]\s+([\d.]+)%', line)
+                        completion = match.group(1) if match else "0"
+                        
+                        # Write update to CSV
+                        writer.writerow([
+                            datetime.now().isoformat(),
+                            title,
+                            year,
+                            torrent_id,
+                            completion,
+                            'downloading'
+                        ])
+                        break
+                
+                if not found:
+                    # Torrent may have completed or been removed
+                    writer.writerow([
+                        datetime.now().isoformat(),
+                        title,
+                        year,
+                        torrent_id,
+                        "100",
+                        'completed'
+                    ])
+    except Exception:
+        pass
+
 data = load_data()
 
 # Pre-load Jellyfin cache on initial page load
 _ = get_jellyfin_items()
+
+# Update torrent statuses from deluge
+update_torrent_statuses_from_deluge()
 
 # Header
 st.title("🎬 Riju's Movie Request Platform")
@@ -479,9 +592,36 @@ for i in range(0, len(filtered_movies), cols_per_row):
                         if exists_in_jellyfin:
                             st.markdown("<div style='text-align: center; padding: 8px; background-color: #2d7f2d; border-radius: 5px;'>✅ In Library</div>", unsafe_allow_html=True)
                         else:
+                            # Check if currently downloading
                             best_magnet = select_best_magnet(movie['magnet_links'])
-                            if best_magnet and st.button("📥 Request", width='stretch', key=f"request_{movie['slug']}"):
-                                request_movie(best_magnet['url'], movie['title'], movie['year'])
+                            if best_magnet:
+                                torrent_id = best_magnet['url'].split('btih:')[1].split('&')[0].upper() if 'btih:' in best_magnet['url'] else None
+                                
+                                # Look up status in CSV
+                                downloading_status = None
+                                if torrent_id:
+                                    csv_file = "torrent_tracking.csv"
+                                    if Path(csv_file).exists():
+                                        try:
+                                            with open(csv_file, 'r') as f:
+                                                reader = csv.DictReader(f)
+                                                rows = list(reader)
+                                                # Get latest entry for this torrent
+                                                for row in reversed(rows):
+                                                    if row.get('torrent_id', '').upper() == torrent_id:
+                                                        downloading_status = row
+                                                        break
+                                        except Exception:
+                                            pass
+                                
+                                if downloading_status and downloading_status.get('completion_percent') != '100':
+                                    # Show completion percentage
+                                    completion = downloading_status.get('completion_percent', '0')
+                                    st.markdown(f"<div style='text-align: center; padding: 8px; background-color: #3d5f7f; border-radius: 5px;'>📥 {completion}%</div>", unsafe_allow_html=True)
+                                else:
+                                    # Show request button
+                                    if st.button("📥 Request", width='stretch', key=f"request_{movie['slug']}"):
+                                        request_movie(best_magnet['url'], movie['title'], movie['year'])
                 
                 st.divider()
 
