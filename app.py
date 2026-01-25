@@ -460,13 +460,19 @@ def update_torrent_statuses_from_deluge():
     except Exception:
         pass
 
+@st.cache_resource
+def update_torrent_cache_on_load():
+    """Cache the initial torrent status update to run only once per session."""
+    update_torrent_statuses_from_deluge()
+    return True
+
 data = load_data()
 
 # Pre-load Jellyfin cache on initial page load
 _ = get_jellyfin_items()
 
-# Update torrent statuses from deluge
-update_torrent_statuses_from_deluge()
+# Update torrent statuses from deluge once on initial page load (cached)
+_ = update_torrent_cache_on_load()
 
 # Header
 st.title("🎬 Riju's Movie Request Platform")
@@ -683,9 +689,11 @@ for i in range(0, len(filtered_movies), cols_per_row):
                                             pass
                                 
                                 if downloading_status and downloading_status.get('completion_percent') != '100':
-                                    # Show completion percentage
+                                    # Show completion percentage as a button to refresh status
                                     completion = downloading_status.get('completion_percent', '0')
-                                    st.markdown(f"<div style='text-align: center; padding: 8px; background-color: #3d5f7f; border-radius: 5px;'>📥 {completion}%</div>", unsafe_allow_html=True)
+                                    if st.button(f"📥 {completion}%", width='stretch', key=f"update_status_{movie['slug']}"):
+                                        update_torrent_statuses_from_deluge()
+                                        st.rerun()
                                 else:
                                     # Show request button
                                     if st.button("📥 Request", width='stretch', key=f"request_{movie['slug']}"):
