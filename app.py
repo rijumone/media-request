@@ -691,7 +691,7 @@ for i in range(0, len(filtered_movies), cols_per_row):
                                 if downloading_status and downloading_status.get('completion_percent') != '100':
                                     # Show completion percentage as a button to refresh status
                                     completion = downloading_status.get('completion_percent', '0')
-                                    if st.button(f"📥 {completion}%", width='stretch', key=f"update_status_{movie['slug']}"):
+                                    if st.button(f"🔄 {completion}%", width='stretch', key=f"update_status_{movie['slug']}"):
                                         update_torrent_statuses_from_deluge()
                                         st.rerun()
                                 else:
