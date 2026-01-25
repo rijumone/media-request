@@ -2,3 +2,6 @@
 *.json
 *.lock
 .env*
+*.yaml
+*.csv
+*.tar.xz

@@ -6,6 +6,9 @@ import os
 import csv
 from datetime import datetime
 import re
+import yaml
+from yaml.loader import SafeLoader
+import streamlit_authenticator as stauth
 try:
     import jellyfin
     from jellyfin.generated.api_10_10.models.media_type import MediaType
@@ -19,6 +22,71 @@ st.set_page_config(
     page_icon="🎬",
     layout="wide"
 )
+
+# Load authentication config
+with open('config.yaml') as file:
+    config = yaml.load(file, Loader=SafeLoader)
+
+# Create authenticator object
+authenticator = stauth.Authenticate(
+    config['credentials'],
+    config['cookie']['name'],
+    config['cookie']['key'],
+    config['cookie']['expiry_days'],
+    auto_hash=False  # Passwords are already hashed
+)
+
+# Render login widget
+try:
+    authenticator.login()
+except Exception as e:
+    st.error(e)
+
+# Check authentication status and handle accordingly
+if st.session_state.get('authentication_status'):
+    # User is logged in - render logout button
+    authenticator.logout(location='sidebar')
+    st.sidebar.markdown(f"**Logged in as:** {st.session_state.get('name')}")
+    
+elif st.session_state.get('authentication_status') is False:
+    # Login failed
+    st.error('❌ Username/password is incorrect')
+    
+    # Render registration option
+    try:
+        email, username, name = authenticator.register_user(
+            pre_authorized=config['pre-authorized']['emails'],
+            captcha=False
+        )
+        if email:
+            st.success('User registered successfully')
+            with open('config.yaml', 'w') as file:
+                yaml.dump(config, file, default_flow_style=False, allow_unicode=True)
+            st.balloons()
+    except Exception as e:
+        st.error(e)
+    
+    st.stop()
+    
+elif st.session_state.get('authentication_status') is None:
+    # Not logged in yet
+    st.warning('👈 Please enter your username and password')
+    
+    # Render registration option
+    try:
+        email, username, name = authenticator.register_user(
+            pre_authorized=config['pre-authorized']['emails'],
+            captcha=False
+        )
+        if email:
+            st.success('User registered successfully')
+            with open('config.yaml', 'w') as file:
+                yaml.dump(config, file, default_flow_style=False, allow_unicode=True)
+            st.balloons()
+    except Exception as e:
+        st.error(e)
+    
+    st.stop()
 
 # Custom CSS for card styling
 st.markdown("""

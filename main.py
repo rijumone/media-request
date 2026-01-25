@@ -3,9 +3,12 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Iterable, List, Optional
 from urllib.parse import urljoin
+from concurrent.futures import ProcessPoolExecutor, as_completed
+from multiprocessing import cpu_count
 import json
 import re
 from enum import Enum
+import sys
 
 from bs4 import BeautifulSoup
 from pydantic import BaseModel
@@ -14,6 +17,7 @@ from pydantic import BaseModel
 MOVIES_ROOT = Path("/home/riju/websites/yts/www.yts-official.cc/movies")
 TORRENT_ROOT = Path("/home/riju/websites/yts/www.yts-official.cc/torrent")
 POSTER_ROOT = Path("/home/riju/websites/yts/www.yts-official.cc/movies/poster")
+MAX_WORKERS = max(1, min(32, cpu_count() or 1))
 
 
 class Quality(str, Enum):
@@ -307,14 +311,21 @@ def parse_media(index_path: Path) -> Media:
 
 
 def main() -> None:
+	index_files = [
+		movie_dir / "index.html"
+		for movie_dir in sorted(MOVIES_ROOT.iterdir())
+		if movie_dir.is_dir() and (movie_dir / "index.html").is_file()
+	]
+
 	media_entries: List[Media] = []
-	for movie_dir in sorted(MOVIES_ROOT.iterdir()):
-		if not movie_dir.is_dir():
-			continue
-		index_file = movie_dir / "index.html"
-		if not index_file.is_file():
-			continue
-		media_entries.append(parse_media(index_file))
+	with ProcessPoolExecutor(max_workers=MAX_WORKERS) as executor:
+		future_map = {executor.submit(parse_media, index_path): index_path for index_path in index_files}
+		for future in as_completed(future_map):
+			index_path = future_map[future]
+			try:
+				media_entries.append(future.result())
+			except Exception as exc:  # noqa: BLE001
+				print(f"Failed to parse {index_path}: {exc}", file=sys.stderr)
 
 	qualities_seen = sorted({entry.quality.value for media in media_entries for entry in (media.magnet_links + media.torrent_files) if entry.quality})
 	types_seen = sorted({entry.type.value for media in media_entries for entry in (media.magnet_links + media.torrent_files) if entry.type})

@@ -10,7 +10,9 @@ dependencies = [
     "bs4 (>=0.0.2,<0.0.3)",
     "pydantic (>=2.12.5,<3.0.0)",
     "streamlit (>=1.53.1,<2.0.0)",
-    "jellyfin-sdk (>=0.3.0,<0.4.0)"
+    "jellyfin-sdk (>=0.3.0,<0.4.0)",
+    "pyyaml (>=6.0.3,<7.0.0)",
+    "streamlit-authenticator (>=0.4.2,<0.5.0)"
 ]
 
 
