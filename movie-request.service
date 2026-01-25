@@ -1,16 +1,16 @@
 [Unit]
-Description=AllGoodOnAmzn Service (with tmux)
+Description=Media Request Service (with tmux)
 After=network.target
 
 [Service]
 Type=forking
-ExecStart=/bin/bash -c '/home/gtx/Kitchen/AllGoodOnAmzn/.tmux_manager.sh all-good-on-amzn /home/gtx/Kitchen/AllGoodOnAmzn start'
-ExecStop=/bin/bash -c '/home/gtx/Kitchen/AllGoodOnAmzn/.tmux_manager.sh all-good-on-amzn /home/gtx/Kitchen/AllGoodOnAmzn stop'
+ExecStart=/bin/bash -c '/home/gtx/Kitchen/media-request/.tmux_manager.sh media-request /home/gtx/Kitchen/media-request start'
+ExecStop=/bin/bash -c '/home/gtx/Kitchen/media-request/.tmux_manager.sh media-request /home/gtx/Kitchen/media-request stop'
 Restart=on-failure
 RemainAfterExit=yes
 User=gtx
 TimeoutSec=150
-WorkingDirectory=/home/gtx/Kitchen/AllGoodOnAmzn
+WorkingDirectory=/home/gtx/Kitchen/media-request
 
 [Install]
 WantedBy=multi-user.target
