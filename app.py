@@ -47,6 +47,10 @@ if st.session_state.get('authentication_status'):
     # User is logged in - render logout button
     authenticator.logout(location='sidebar')
     st.sidebar.markdown(f"**Logged in as:** {st.session_state.get('name')}")
+    if st.sidebar.button("♻️ Clear cache & reload"):
+        st.cache_data.clear()
+        st.cache_resource.clear()
+        st.rerun()
     
 elif st.session_state.get('authentication_status') is False:
     # Login failed
