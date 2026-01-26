@@ -84,8 +84,8 @@ class TorrentFile(BaseModel):
 
 class Media(BaseModel):
 	slug: str
-	title: Optional[str]
-	year: Optional[int]
+	title: str
+	year: int
 	genres: List[Genre]
 	imdb_link: Optional[str]
 	imdb_rating: Optional[float]
@@ -231,7 +231,11 @@ def parse_media(index_path: Path) -> Media:
 	base_url = f"https://www.yts-official.cc/movies/{slug}/"
 
 	title_tag = soup.select_one("#movie-content h1") or soup.find("h1", attrs={"itemprop": "name"})
-	title = title_tag.get_text(strip=True) if title_tag else None
+	if not title_tag:
+		raise ValueError(f"No title found in {index_path}")
+	title = title_tag.get_text(strip=True)
+	if not title:
+		raise ValueError(f"Empty title in {index_path}")
 
 	year_tag = None
 	if title_tag and title_tag.find_next_sibling("h2"):
@@ -239,6 +243,8 @@ def parse_media(index_path: Path) -> Media:
 	if not year_tag:
 		year_tag = soup.find("h2")
 	year = parse_year(year_tag.get_text(strip=True) if year_tag else None)
+	if year is None:
+		raise ValueError(f"No year found in {index_path}")
 
 	# Extract genres from second h2 (after year)
 	genres: List[Genre] = []
