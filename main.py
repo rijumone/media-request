@@ -14,9 +14,10 @@ from bs4 import BeautifulSoup
 from pydantic import BaseModel
 
 
-MOVIES_ROOT = Path("/home/riju/websites/yts/www.yts-official.cc/movies")
-TORRENT_ROOT = Path("/home/riju/websites/yts/www.yts-official.cc/torrent")
-POSTER_ROOT = Path("/home/riju/websites/yts/www.yts-official.cc/movies/poster")
+ROOT_BASE = Path.home() / "websites" / "yts" / "www.yts-official.cc"
+MOVIES_ROOT = ROOT_BASE / "movies"
+TORRENT_ROOT = ROOT_BASE / "torrent"
+POSTER_ROOT = ROOT_BASE / "movies" / "poster"
 MAX_WORKERS = max(1, min(32, cpu_count() or 1))
 
 
