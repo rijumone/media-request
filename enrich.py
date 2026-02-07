@@ -10,6 +10,7 @@ import click
 import requests
 from bs4 import BeautifulSoup
 from loguru import logger
+from tqdm import tqdm
 
 
 BASE_URL = "https://www.yts-official.top/movies/"
@@ -203,7 +204,19 @@ def load_existing_output(output_path: Path) -> dict[str, dict]:
 @click.option("--sleep-min", default=0.1, show_default=True)
 @click.option("--sleep-max", default=0.6, show_default=True)
 @click.option("--limit", default=0, show_default=True, help="Limit number of movies to process")
-def enrich_movies(input_file: str, output_file: str, base_url: str, sleep_min: float, sleep_max: float, limit: int) -> None:
+@click.option("--start", "start", default=1, show_default=True, help="1-based movie number to start from")
+def enrich_movies(
+	input_file: str,
+	output_file: str,
+	base_url: str,
+	sleep_min: float,
+	sleep_max: float,
+	limit: int,
+	start: int,
+) -> None:
+	logger.remove()
+	logger.add(lambda msg: tqdm.write(msg, end=""), colorize=True)
+
 	input_path = Path(input_file)
 	output_path = Path(output_file)
 	if not input_path.exists():
@@ -225,7 +238,10 @@ def enrich_movies(input_file: str, output_file: str, base_url: str, sleep_min: f
 	if enriched_map:
 		logger.info("Found {} already enriched movies in output file", len(enriched_map))
 
-	items = movies[:limit] if limit and limit > 0 else movies
+	start_index = max(0, start - 1)
+	items = movies[start_index:]
+	if limit and limit > 0:
+		items = items[:limit]
 	
 	# Build output list: use enriched versions if available, otherwise original
 	output_list = []
@@ -241,7 +257,10 @@ def enrich_movies(input_file: str, output_file: str, base_url: str, sleep_min: f
 	logger.info("Processing {} movies ({} already enriched, {} to enrich)", 
 		len(items), len(items) - len(to_process), len(to_process))
 	
-	for idx, list_index in enumerate(to_process, start=1):
+	for idx, list_index in enumerate(
+		tqdm(to_process, total=len(to_process), desc="Enriching movies", unit="movie"),
+		start=1,
+	):
 		movie = output_list[list_index]
 		logger.info("[{}/{}] Processing: {}", idx, len(to_process), movie.get("title", movie.get("slug")))
 		enriched = enrich_movie(movie, base_url)
