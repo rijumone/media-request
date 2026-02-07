@@ -2,7 +2,6 @@ import json
 import random
 import re
 import time
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Iterable
 from urllib.parse import urljoin
@@ -206,7 +205,6 @@ def load_existing_output(output_path: Path) -> dict[str, dict]:
 @click.option("--sleep-max", default=0.6, show_default=True)
 @click.option("--limit", default=0, show_default=True, help="Limit number of movies to process")
 @click.option("--start", "start", default=1, show_default=True, help="1-based movie number to start from")
-@click.option("--workers", default=6, show_default=True, help="Number of worker threads")
 def enrich_movies(
 	input_file: str,
 	output_file: str,
@@ -215,7 +213,6 @@ def enrich_movies(
 	sleep_max: float,
 	limit: int,
 	start: int,
-	workers: int,
 ) -> None:
 	logger.remove()
 	logger.add(lambda msg: tqdm.write(msg, end=""), colorize=True)
@@ -260,29 +257,22 @@ def enrich_movies(
 	logger.info("Processing {} movies ({} already enriched, {} to enrich)", 
 		len(items), len(items) - len(to_process), len(to_process))
 	
-	def enrich_task(index: int, movie: dict) -> tuple[int, dict]:
-		logger.info("Processing: {}", movie.get("title", movie.get("slug")))
-		enriched = enrich_movie(movie, base_url)
-		if sleep_max > 0:
-			pause = random.uniform(max(0.0, sleep_min), max(sleep_min, sleep_max))
-			logger.debug("Sleeping {:.2f} seconds", pause)
-			time.sleep(pause)
-		return index, enriched
+	with tqdm(total=len(to_process), desc="Enriching movies", unit="movie") as progress:
+		for idx, list_index in enumerate(to_process, start=1):
+			movie = output_list[list_index]
+			logger.info("Processing: {}", movie.get("title", movie.get("slug")))
+			enriched = enrich_movie(movie, base_url)
+			output_list[list_index] = enriched
+			progress.update(1)
+			logger.info("[{}/{}] Completed: {}", idx, len(to_process), enriched.get("title", enriched.get("slug")))
 
-	with ThreadPoolExecutor(max_workers=max(1, workers)) as executor:
-		futures = [
-			executor.submit(enrich_task, list_index, output_list[list_index])
-			for list_index in to_process
-		]
-		with tqdm(total=len(to_process), desc="Enriching movies", unit="movie") as progress:
-			for idx, future in enumerate(as_completed(futures), start=1):
-				list_index, enriched = future.result()
-				output_list[list_index] = enriched
-				progress.update(1)
-				logger.info("[{}/{}] Completed: {}", idx, len(to_process), enriched.get("title", enriched.get("slug")))
-
-				# Write after each enrichment
-				write_output(output_list, output_path)
+			# Write after each enrichment
+			write_output(output_list, output_path)
+			
+			if sleep_max > 0:
+				pause = random.uniform(max(0.0, sleep_min), max(sleep_min, sleep_max))
+				logger.debug("Sleeping {:.2f} seconds", pause)
+				time.sleep(pause)
 
 	logger.success("Successfully wrote {} enriched movies to: {}", len(output_list), output_path)
 
