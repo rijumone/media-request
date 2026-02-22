@@ -244,7 +244,7 @@ def request_movie(magnet_url, movie_title, movie_year):
             info_cmd,
             capture_output=True,
             text=True,
-            timeout=60,
+            timeout=120,
             cwd=deluge_working_dir
         )
         
