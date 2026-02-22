@@ -240,23 +240,31 @@ def request_movie(magnet_url, movie_title, movie_year):
             "info"
         ]
         
-        info_result = subprocess.run(
-            info_cmd,
-            capture_output=True,
-            text=True,
-            timeout=120,
-            cwd=deluge_working_dir
-        )
-        
-        output = info_result.stdout + info_result.stderr
-        
         # Parse the output to find the torrent with matching year and title
         torrent_info = None
-        for line in output.split('\n'):
-            if str(movie_year) in line and movie_title.lower() in line.lower():
-                torrent_info = line.strip()
+        max_attempts = 2
+        for attempt in range(max_attempts):
+            if attempt > 0:
+                # Retry once after a short delay in case deluge hasn't indexed it yet
+                time.sleep(5)
+
+            info_result = subprocess.run(
+                info_cmd,
+                capture_output=True,
+                text=True,
+                timeout=120,
+                cwd=deluge_working_dir
+            )
+
+            output = info_result.stdout + info_result.stderr
+            for line in output.split('\n'):
+                if str(movie_year) in line and movie_title.lower() in line.lower():
+                    torrent_info = line.strip()
+                    break
+
+            if torrent_info:
                 break
-        
+
         if not torrent_info:
             st.warning(f"⚠️ Torrent added but status not found yet. It may take a moment to appear.")
             # st.code(output, language=None)
